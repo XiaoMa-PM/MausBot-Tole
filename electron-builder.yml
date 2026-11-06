@@ -1,6 +1,6 @@
-appId: com.anatole.manusbottole
-productName: ManusBot Tole
-artifactName: ManusBot-Tole-${version}-${arch}.${ext}
+appId: com.anatole.mausbottole
+productName: MausBot Tole
+artifactName: MausBot-Tole-${version}-${arch}.${ext}
 
 # Keep the runtime app name so userData (~/Library/Application Support/OpenMausBot)
 # and the safeStorage keychain entry carry over from the original install.
@@ -21,7 +21,7 @@ protocols:
 publish:
   - provider: github
     owner: XiaoMa-PM
-    repo: ManusBot-Tole
+    repo: MausBot-Tole
 
 directories:
   buildResources: build

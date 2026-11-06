@@ -1,16 +1,16 @@
 # Progress
 
-## 2026-11-06 · 改名 ManusBot Tole
+## 2026-11-06 · 改名 MausBot Tole
 
 **进展**
-- App 名 `ManusBot Tole`，bundle id `com.anatole.manusbottole`，自动更新源指向 `XiaoMa-PM/ManusBot-Tole`；GitHub fork 同步改名。
+- App 名 `MausBot Tole`，bundle id `com.anatole.mausbottole`，自动更新源指向 `XiaoMa-PM/MausBot-Tole`；GitHub fork 同步改名。
 - `extraMetadata.productName` 保持 `OpenMausBot`：运行时 app 名不变，userData 与 safeStorage 钥匙串沿用原版，凭证不丢。bot 数据仍在 `~/.openmausbot`。
 - 本地打包输出到 `release-tole/`，避免覆盖正在运行的旧包。
 
 ## 2026-11-06 · 迁到个人 fork 维护
 
 **进展**
-- fork 到 `XiaoMa-PM/OpenMausBot`（后改名 `ManusBot-Tole`）：`origin` 指向 fork，`upstream` 指向 `milind-soni/OpenMausBot`。
+- fork 到 `XiaoMa-PM/OpenMausBot`（后改名 `MausBot-Tole`）：`origin` 指向 fork，`upstream` 指向 `milind-soni/OpenMausBot`。
 - 同步上游：`git fetch upstream && git checkout main && git merge upstream/main && git push origin main`，再把 main 合进 `feat/task-board`。
 
 ## 2026-11-06 · 任务看板（feat/task-board）
