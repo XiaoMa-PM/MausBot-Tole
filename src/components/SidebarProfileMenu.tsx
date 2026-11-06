@@ -13,6 +13,7 @@ import {
   HelpCircle,
   Keyboard,
   Laptop,
+  ListTodo,
   LifeBuoy,
   Loader2,
   RefreshCw,
@@ -331,10 +332,11 @@ export function phoneMenuItems({
   ];
 }
 
-export function toolMenuItems({ activeView, automationsNeedYou, onAutomations, onTeamMap, onFiles, archived }: {
+export function toolMenuItems({ activeView, automationsNeedYou, onAutomations, onBoard, onTeamMap, onFiles, archived }: {
   activeView: string;
   automationsNeedYou: boolean;
   onAutomations: () => void;
+  onBoard: () => void;
   onTeamMap: () => void;
   /** set once My Cloud's files are ready to open */
   onFiles?: () => void;
@@ -342,6 +344,7 @@ export function toolMenuItems({ activeView, automationsNeedYou, onAutomations, o
 }): SidebarMenuItem[] {
   return [
     { key: "automations", label: t("sidebar.nav.automations"), icon: <Zap size={16} />, active: activeView === "routines", attention: automationsNeedYou, onSelect: onAutomations },
+    { key: "board", label: t("sidebar.nav.board"), icon: <ListTodo size={16} />, active: activeView === "board", onSelect: onBoard },
     { key: "team-map", label: t("sidebar.nav.teamMap"), icon: <UsersRound size={16} />, active: activeView === "team-map", onSelect: onTeamMap },
     ...(onFiles ? [{ key: "files", label: t("sidebar.nav.files"), icon: <FolderOpen size={16} />, active: activeView === "files", onSelect: onFiles }] : []),
     ...(archived?.count ? [{ key: "archived", label: t("sidebar.archived.title"), icon: <Archive size={16} />, value: String(archived.count), onSelect: archived.open }] : []),
@@ -610,6 +613,7 @@ export function SidebarProfileMenu({ iconOnly = false, rail = false, circle = fa
         activeView: state.activeView,
         automationsNeedYou: account.automationsNeedYou,
         onAutomations: () => dispatch({ type: "showRoutines", view: "list" }),
+        onBoard: () => dispatch({ type: "showBoard" }),
         onTeamMap: () => dispatch({ type: "showTeamMap" }),
         onFiles: filesReady ? () => dispatch({ type: "showFiles" }) : undefined,
         archived: account.archived,

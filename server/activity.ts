@@ -80,6 +80,7 @@ const TEAM_ACTION_KEYS: Record<string, string> = {
   delete_trigger: "activity.tool.team.deleteTrigger",
   list_waits: "activity.tool.team.listWaits",
   wait_until: "activity.tool.team.waitUntil",
+  task_board: "activity.tool.team.taskBoard",
   add_mcp_server: "activity.tool.team.addMcpServer",
   ask_bot: "activity.tool.team.askBot",
   assignment_status: "activity.tool.team.assignmentStatus",

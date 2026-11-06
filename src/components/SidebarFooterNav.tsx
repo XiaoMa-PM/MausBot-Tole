@@ -1,4 +1,4 @@
-import { FolderOpen, Globe, Puzzle, UsersRound, Zap } from "lucide-react";
+import { FolderOpen, Globe, ListTodo, Puzzle, UsersRound, Zap } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 
 import { useAppTriggers } from "@/lib/app-triggers";
@@ -160,6 +160,14 @@ export function SidebarFooterNav({
   const rows = (
     <>
       {automationsRow}
+      <NavRow
+        id="board"
+        label={t("sidebar.nav.board")}
+        iconsOnly={iconsOnly || toolbar}
+        active={state.activeView === "board"}
+        icon={(active) => <ListTodo size={iconSize} className={tone(active)} />}
+        onClick={() => dispatch({ type: "showBoard" })}
+      />
       {appsRow}
       {(advanced || iconsOnly) && (
         <NavRow

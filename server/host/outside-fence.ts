@@ -32,6 +32,7 @@ const EXACT: ReadonlySet<string> = new Set([
   "GET /api/internal/waits",
   "POST /api/internal/waits",
   "POST /api/internal/waits/cancel",
+  "POST /api/internal/board",
   "POST /api/internal/helpers/decide",
   "POST /api/internal/helpers/extract",
   // Each decides for itself, in plain words: what a confined turn may do there waits on a card, stays confined or is refused.
