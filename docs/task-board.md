@@ -74,4 +74,4 @@ saved a high-priority item, changed it to low and moved it across columns throug
 a page reload retained Done / low / revision 4. These sequences replaced pointer capture, so they do not
 prove native mouse capture or physical touch gestures. The mounted browser has no lower-level mouse or
 touch inputs; native gesture acceptance remains outstanding. Escape cancellation has a separate regression
-case. Type checking passed (exit 0). Production build and the new candidate package remain pending. Native gestures require user acceptance.
+case. Type checking passed (exit 0). Production build passed (exit 0), including Escape cancellation. The new candidate package remains pending. Native gestures require user acceptance.
