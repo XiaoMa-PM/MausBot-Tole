@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Bot as BotIcon, Check, ListTodo, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
+// INPUT: Board snapshots and person pointer/form actions.
+// OUTPUT: Status moves and priority edits through the board API.
+// POS: Task board page in the desktop and mobile shell.
+import { useCallback, useEffect, useRef, useState, type FormEvent, type PointerEvent } from "react";
+import { Bot as BotIcon, Check, GripVertical, ListTodo, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 
 import { api, openThread, useStore } from "@/state/store";
 import { useShowThreads } from "@/lib/thread-preferences";
@@ -7,7 +10,10 @@ import { useCaptionChrome } from "@/components/DesktopCapabilities";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
-import { BOARD_STATUSES, type BoardRunning, type BoardSnapshot, type BoardStatus, type BoardTask } from "../../shared/board";
+import { BOARD_PRIORITIES, BOARD_STATUSES, type BoardPriority, type BoardRunning, type BoardSnapshot, type BoardStatus, type BoardTask } from "../../shared/board";
+
+const PRIORITY_TITLE: Record<BoardPriority, LocaleKey> = { high: "board.priority.high", medium: "board.priority.medium", low: "board.priority.low" };
+type TaskChange = { title?: string; status?: BoardStatus; priority?: BoardPriority };
 
 const COLUMN_TITLE: Record<BoardStatus, LocaleKey> = { todo: "board.column.todo", doing: "board.column.doing", done: "board.column.done" };
 const RUNNING_STATE: Record<BoardRunning["state"], LocaleKey> = { queued: "board.running.queued", running: "board.running.running", waiting: "board.running.waiting" };
@@ -19,6 +25,9 @@ export function TaskBoardPage() {
   const [snapshot, setSnapshot] = useState<BoardSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [priority, setPriority] = useState<BoardPriority>("medium");
+  const [dropStatus, setDropStatus] = useState<BoardStatus | null>(null);
+  const dragging = useRef<{ task: BoardTask; pointerId: number; x: number; y: number } | null>(null);
 
   // `background`: the 3-second poll, which never wakes a Cloud home that went to sleep.
   const refresh = useCallback(async (background = false) => {
@@ -53,12 +62,43 @@ export function TaskBoardPage() {
     const title = draft.trim();
     if (!title) return;
     setDraft("");
-    void run(api("/api/board", { method: "POST", body: JSON.stringify({ title }) }));
+    void run(api("/api/board", { method: "POST", body: JSON.stringify({ title, priority }) }));
   };
-  const edit = (task: BoardTask, change: { title?: string; status?: BoardStatus }) =>
+  const edit = (task: BoardTask, change: TaskChange) =>
     void run(api(`/api/board/${task.id}`, { method: "PATCH", body: JSON.stringify({ ...change, revision: task.revision }) }));
   const remove = (task: BoardTask) => void run(api(`/api/board/${task.id}`, { method: "DELETE" }));
   const open = (botId: string, threadId: string) => openThread(dispatch, { botId, threadId }, state, showThreads);
+
+  const columnAt = (event: PointerEvent): BoardStatus | null => {
+    const value = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-board-column]")?.dataset.boardColumn;
+    return BOARD_STATUSES.find((status) => status === value) ?? null;
+  };
+  const startDrag = (task: BoardTask, event: PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0 || task.owner?.kind === "bot") return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragging.current = { task, pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+  };
+  const moveDrag = (event: PointerEvent) => {
+    if (dragging.current?.pointerId === event.pointerId) setDropStatus(columnAt(event));
+  };
+  const endDrag = (event: PointerEvent, cancelled = false) => {
+    const drag = dragging.current;
+    dragging.current = null;
+    setDropStatus(null);
+    if (!drag || drag.pointerId !== event.pointerId || cancelled) return;
+    const status = columnAt(event);
+    if (status && status !== drag.task.status && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) >= 8) edit(drag.task, { status });
+  };
+
+  useEffect(() => {
+    const cancel = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      dragging.current = null;
+      setDropStatus(null);
+    };
+    window.addEventListener("keydown", cancel);
+    return () => window.removeEventListener("keydown", cancel);
+  }, []);
 
   const tasks = snapshot?.tasks ?? [];
   return (
@@ -79,19 +119,21 @@ export function TaskBoardPage() {
             placeholder={t("board.add.placeholder")}
             className="min-w-0 flex-1 rounded-lg border border-hairline/60 bg-card px-3 py-2 text-[14px] outline-none focus:border-accent"
           />
+          <PrioritySelect value={priority} onChange={setPriority} />
           <button type="submit" disabled={!draft.trim()} className="flex items-center gap-1 rounded-lg bg-accent px-3 py-2 text-[13px] font-medium text-white disabled:opacity-40">
             <Plus size={14} />{t("board.add.button")}
           </button>
         </form>
         <div className="grid gap-4 md:grid-cols-3">
           {BOARD_STATUSES.map((status) => (
-            <section key={status} className="min-w-0">
+            <section key={status} data-board-column={status} className={cn("min-h-32 min-w-0 rounded-xl transition-colors", dropStatus === status && "bg-accent/10 ring-2 ring-accent")}>
               <h2 className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-ink-secondary">
                 {t(COLUMN_TITLE[status])} <span className="text-ink-tertiary">{tasks.filter((task) => task.status === status).length}</span>
               </h2>
               <div className="flex flex-col gap-2">
                 {tasks.filter((task) => task.status === status).map((task) => (
-                  <TaskCard key={task.id} task={task} onEdit={edit} onRemove={remove} onOpen={open} />
+                  <TaskCard key={task.id} task={task} onEdit={edit} onRemove={remove} onOpen={open}
+                    onDragStart={startDrag} onDragMove={moveDrag} onDragEnd={endDrag} />
                 ))}
               </div>
             </section>
@@ -130,14 +172,24 @@ function RunningSection({ running, onOpen }: { running: BoardRunning[]; onOpen: 
   );
 }
 
+function PrioritySelect({ value, onChange }: { value: BoardPriority; onChange: (priority: BoardPriority) => void }) {
+  return <select aria-label={t("board.priority.label")} value={value} onChange={(event) => onChange(event.target.value as BoardPriority)}
+    className="rounded-lg border border-hairline/60 bg-card px-2 py-1 text-[12px] text-ink-secondary">
+    {BOARD_PRIORITIES.map((priority) => <option key={priority} value={priority}>{t(PRIORITY_TITLE[priority])}</option>)}
+  </select>;
+}
+
 interface TaskCardProps {
+  onDragStart: (task: BoardTask, event: PointerEvent<HTMLButtonElement>) => void;
+  onDragMove: (event: PointerEvent) => void;
+  onDragEnd: (event: PointerEvent, cancelled?: boolean) => void;
   task: BoardTask;
-  onEdit: (task: BoardTask, change: { title?: string; status?: BoardStatus }) => void;
+  onEdit: (task: BoardTask, change: TaskChange) => void;
   onRemove: (task: BoardTask) => void;
   onOpen: (botId: string, threadId: string) => void;
 }
 
-function TaskCard({ task, onEdit, onRemove, onOpen }: TaskCardProps) {
+function TaskCard({ task, onEdit, onRemove, onOpen, onDragStart, onDragMove, onDragEnd }: TaskCardProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const bot = task.owner?.kind === "bot" ? task.owner : undefined;
   const done = task.status === "done";
@@ -148,6 +200,15 @@ function TaskCard({ task, onEdit, onRemove, onOpen }: TaskCardProps) {
   };
   return (
     <article className="group rounded-xl border border-hairline/40 bg-card px-3 py-2.5">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <PrioritySelect value={task.priority} onChange={(priority) => onEdit(task, { priority })} />
+        {!bot && <button aria-label={t("board.task.drag")} style={{ touchAction: "none" }}
+          onPointerDown={(event) => onDragStart(task, event)} onPointerMove={onDragMove}
+          onPointerUp={(event) => onDragEnd(event)} onPointerCancel={(event) => onDragEnd(event, true)}
+          className="flex size-8 cursor-grab items-center justify-center rounded text-ink-tertiary hover:bg-raised active:cursor-grabbing">
+          <GripVertical size={16} />
+        </button>}
+      </div>
       <div className="flex items-start gap-2">
         <button
           aria-label={done ? t("board.task.reopen") : t("board.task.complete")}

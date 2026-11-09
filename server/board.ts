@@ -1,8 +1,11 @@
+// INPUT: Validated board mutations and the persisted board file.
+// OUTPUT: Revision-checked tasks with persisted status and priority.
+// POS: Task board storage and ownership rules.
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { BOARD_LIMITS, BOARD_STATUSES, type BoardActor, type BoardStatus, type BoardTask } from "../shared/board.ts";
+import { BOARD_LIMITS, BOARD_PRIORITIES, BOARD_STATUSES, type BoardPriority, type BoardActor, type BoardStatus, type BoardTask } from "../shared/board.ts";
 import { OwnedFile } from "./atomic.ts";
 import { DATA_DIR } from "./config.ts";
 import { saveSoon } from "./save-batch.ts";
@@ -20,6 +23,7 @@ export interface BoardEdit {
   title?: unknown;
   note?: unknown;
   status?: unknown;
+  priority?: unknown;
   revision?: unknown;
 }
 
@@ -41,6 +45,13 @@ const statusOf = (value: unknown): BoardStatus | undefined => {
   return status;
 };
 
+const priorityOf = (value: unknown): BoardPriority => {
+  if (value === undefined) return "medium";
+  const priority = BOARD_PRIORITIES.find((candidate) => candidate === value);
+  if (!priority) throw new BoardError(400, `priority is one of ${BOARD_PRIORITIES.join(", ")}.`);
+  return priority;
+};
+
 const sameBot = (actor: BoardActor | undefined, botId: string) => actor?.kind === "bot" && actor.botId === botId;
 
 function loadTask(raw: unknown): BoardTask | null {
@@ -48,7 +59,7 @@ function loadTask(raw: unknown): BoardTask | null {
   const task = raw as Partial<BoardTask>;
   if (typeof task.id !== "string" || typeof task.title !== "string" || !BOARD_STATUSES.includes(task.status as BoardStatus)) return null;
   if (typeof task.revision !== "number" || typeof task.createdAt !== "number" || typeof task.updatedAt !== "number") return null;
-  return structuredClone(task as BoardTask);
+  return structuredClone({ ...task, priority: priorityOf(task.priority) } as BoardTask);
 }
 
 export class Board {
@@ -86,7 +97,7 @@ export class Board {
     return task && structuredClone(task);
   }
 
-  add(by: BoardActor, input: { title?: unknown; note?: unknown }, claim = false): BoardTask {
+  add(by: BoardActor, input: { title?: unknown; note?: unknown; priority?: unknown }, claim = false): BoardTask {
     if (this.tasks.length >= BOARD_LIMITS.tasks) throw new BoardError(409, `The board holds at most ${BOARD_LIMITS.tasks} tasks. Delete finished ones first.`);
     const at = this.now();
     const note = text(input.note, "note", BOARD_LIMITS.note, false);
@@ -95,6 +106,7 @@ export class Board {
       title: text(input.title, "title", BOARD_LIMITS.title, true)!,
       ...(note ? { note } : {}),
       status: claim ? "doing" : "todo",
+      priority: priorityOf(input.priority),
       revision: 1,
       createdBy: by,
       ...(claim ? { owner: by, ...(by.kind === "bot" ? { progress: 0 } : {}) } : {}),
@@ -112,7 +124,7 @@ export class Board {
       const title = text(edit.title, "title", BOARD_LIMITS.title, false);
       const note = text(edit.note, "note", BOARD_LIMITS.note, false);
       const status = statusOf(edit.status);
-      let next: BoardTask = { ...task, ...(title ? { title } : {}) };
+      let next: BoardTask = { ...task, ...(title ? { title } : {}), ...(edit.priority !== undefined ? { priority: priorityOf(edit.priority) } : {}) };
       if (note !== undefined) next = note ? { ...next, note } : withoutKeys(next, "note");
       if (status && status !== task.status) next = moveTo(next, status, this.now(), { kind: "person" });
       return next;

@@ -53,3 +53,25 @@ An isolated fake-engine server passed board HTTP create, complete, reopen, list 
 Type checking and the production build passed (exit 0). The combined board, menu, lazy-screen,
 catalog, proxy and outside-fence regression run passed 362 tests in eight files. Package identity and
 signature acceptance remains pending.
+
+## Dragging and priority (2026-11-09)
+
+- Person-owned or unclaimed cards have a dedicated pointer drag handle. Mouse and touch dragging onto
+  To do / In progress / Done sends the existing revision-checked PATCH; dropping outside a column or
+  cancelling (including Escape) makes no write. Scrolling remains available outside the handle. State buttons remain usable.
+- Bot-owned cards have no drag handle. Running-for-you rows remain derived from actual executions.
+- Priority is high / medium / low, default medium. New-item and card selectors configure it; a visible label
+  persists after refresh. Existing records with no priority read as medium. No sorting or filtering is added.
+- API validates priority at add/edit boundaries. Tests cover defaults, three levels, invalid values, stale
+  revision and reload persistence; interaction acceptance covers actual mouse and touch cross-column moves.
+- Implementation: extend board wire/store, add priority controls and pointer handling, run focused tests,
+  type/build checks and isolated interaction acceptance, then commit/push and rebuild the arm64 package.
+
+### Current acceptance evidence
+
+Storage/routes and initial renderer regressions passed 115 tests (including Escape cancellation) in five files. The isolated real renderer
+saved a high-priority item, changed it to low and moved it across columns through DOM pointer sequences;
+a page reload retained Done / low / revision 4. These sequences replaced pointer capture, so they do not
+prove native mouse capture or physical touch gestures. The mounted browser has no lower-level mouse or
+touch inputs; native gesture acceptance remains outstanding. Escape cancellation has a separate regression
+case. Type checking passed (exit 0). Production build and the new candidate package remain pending. Native gestures require user acceptance.

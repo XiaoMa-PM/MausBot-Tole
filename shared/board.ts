@@ -1,7 +1,13 @@
+// INPUT: Board actors and persisted item fields.
+// OUTPUT: Board wire types, statuses and priority levels.
+// POS: Shared contract for the task board.
 // The task board: a to-do list the person and their bots share, and what bots are running for the person right now.
 
 export const BOARD_STATUSES = ["todo", "doing", "done"] as const;
 export type BoardStatus = (typeof BOARD_STATUSES)[number];
+
+export const BOARD_PRIORITIES = ["high", "medium", "low"] as const;
+export type BoardPriority = (typeof BOARD_PRIORITIES)[number];
 
 export const BOARD_LIMITS = { title: 200, note: 4000, progressNote: 300, tasks: 500 } as const;
 
@@ -12,6 +18,7 @@ export interface BoardTask {
   title: string;
   note?: string;
   status: BoardStatus;
+  priority: BoardPriority;
   /** Bumped on every change; a write naming an older revision is refused, so two writers never overwrite each other. */
   revision: number;
   createdBy: BoardActor;

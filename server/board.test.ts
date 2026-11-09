@@ -102,3 +102,30 @@ describe("Board", () => {
     expect(readFileSync(file, "utf8")).toBe("{not json");
   });
 });
+
+describe("board priority and manual moves", () => {
+  it("defaults priority to medium and persists priority edits and cross-column moves", () => {
+    const { file, board } = fresh();
+    const task = board.add({ kind: "person" }, { title: "Plan" });
+    expect(task.priority).toBe("medium");
+    const doing = board.editByPerson(task.id, { status: "doing", priority: "high", revision: task.revision });
+    expect(doing).toMatchObject({ status: "doing", priority: "high", owner: { kind: "person" } });
+    const done = board.editByPerson(task.id, { status: "done", priority: "low", revision: doing.revision });
+    expect(new Board({ file }).get(task.id)).toMatchObject({ status: "done", priority: "low" });
+    expect(board.editByPerson(task.id, { status: "todo", revision: done.revision }).owner).toBeUndefined();
+    refused(() => board.editByPerson(task.id, { priority: "high", revision: task.revision }), 409);
+  });
+
+  it.each(["high", "medium", "low"])("creates a %s priority item", (priority) => {
+    const { board } = fresh();
+    expect(board.add({ kind: "person" }, { title: "Plan", priority }).priority).toBe(priority);
+  });
+
+  it("rejects invalid priority when adding or editing", () => {
+    const { board } = fresh();
+    refused(() => board.add({ kind: "person" }, { title: "Plan", priority: "urgent" }), 400);
+    const task = board.add({ kind: "person" }, { title: "Plan" });
+    refused(() => board.editByPerson(task.id, { priority: 1 }), 400);
+    expect(board.get(task.id)?.priority).toBe("medium");
+  });
+});
