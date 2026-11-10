@@ -2,7 +2,7 @@ import { userError, type UserError } from "../user-errors.ts";
 import { withMcpSignIn, type McpOAuthManager } from "../mcp-oauth.ts";
 import { brokeredServer, type BrokerPath } from "../bot-box/broker-probe.ts";
 import { probeMcpServer, sendsCredentials, type McpProbeOptions, type McpProbeResult } from "../mcp-probe.ts";
-import { MAX_MCP_SERVERS, isRemoteMcpServer, parseStoredMcpServer, type McpRunsOn, type StoredMcpServer, type StoredRemoteMcpServer } from "../mcp-registry.ts";
+import { MAX_MCP_SERVERS, isRemoteMcpServer, mcpServerNotFound, parseStoredMcpServer, type McpRunsOn, type StoredMcpServer, type StoredRemoteMcpServer } from "../mcp-registry.ts";
 import { postizKeyHeaders } from "../postiz/connection.ts";
 import type { AppConfig } from "../config.ts";
 import type { ChatAppsMcp } from "../chat-apps-mcp.ts";
@@ -35,6 +35,8 @@ export interface McpConfigDeps {
   botsPath?(): BrokerPath | null;
   /** How Test starts a command server when no bot asks: as the turns of its bot, or of any bot (server/mcp-probe.ts `asBot`). */
   probeAs?(server: { bot?: string }): NonNullable<McpProbeOptions["asBot"]>;
+  /** Test for a server that runs on another computer: on that computer, through lending, for whoever tests (`lender`). */
+  testElsewhere?(name: string, server: StoredMcpServer & { runsOn: McpRunsOn }, lender: string | null, signal: AbortSignal): Promise<McpConfigResult>;
 }
 
 export type McpConfigRefusal = { status: number; error: string; code?: string } & Partial<Pick<UserError, "errorKey" | "errorParams">>;
@@ -57,6 +59,8 @@ export interface McpConfig {
     signal: AbortSignal;
     /** A person's own connection, asked for only when the server is theirs; null when there is no one to answer for it. */
     person?: (url: string) => { oauth: McpOAuthManager; key?: { header: string; value: string } } | null;
+    /** Whose lent computers a server that runs elsewhere is tested on; null or absent: nobody's. */
+    lender?: string | null;
   }): Promise<McpConfigResult>;
   /** The one flag every writer of `cfg.mcpServers` takes: two writers must not interleave a read with a save. */
   busy: BusyFlag;
@@ -120,7 +124,7 @@ export function createMcpConfig(deps: McpConfigDeps & { changed(): void }): McpC
   const saved = (status: number): McpConfigResult => ({ status, body: mcpServerResponse() });
   const stored = (name: string) => {
     const current = cfg.mcpServers ?? {};
-    if (!Object.hasOwn(current, name)) return { result: { status: 404, error: "MCP server not found." } as McpConfigResult };
+    if (!Object.hasOwn(current, name)) return { result: { status: 404, error: mcpServerNotFound(name) } as McpConfigResult };
     const existing = parseStoredMcpServer(name, current[name]);
     return existing.ok ? { current, existing: existing.server } : { result: { status: 400, error: existing.error } as McpConfigResult };
   };
@@ -215,7 +219,7 @@ export function createMcpConfig(deps: McpConfigDeps & { changed(): void }): McpC
     }),
     remove: (name) => write(() => {
       const current = cfg.mcpServers ?? {};
-      if (!Object.hasOwn(current, name)) return { status: 404, error: "MCP server not found." };
+      if (!Object.hasOwn(current, name)) return { status: 404, error: mcpServerNotFound(name) };
       const next = { ...current };
       delete next[name];
       persistMcpServers(next);
@@ -225,12 +229,13 @@ export function createMcpConfig(deps: McpConfigDeps & { changed(): void }): McpC
       deps.connectionsChanged?.("removed");
       return saved(200);
     }),
-    test: async (name, { signal, person, asBot }) => {
+    test: async (name, { signal, person, asBot, lender }) => {
       const raw = cfg.mcpServers?.[name];
-      if (raw === undefined) return { status: 404, error: "MCP server not found." };
+      if (raw === undefined) return { status: 404, error: mcpServerNotFound(name) };
       const parsed = parseStoredMcpServer(name, raw);
       if (!parsed.ok) return { status: 400, error: parsed.error };
-      if (parsed.server.runsOn) return { status: 409, error: runsElsewhere(parsed.server.runsOn) };
+      const { runsOn } = parsed.server;
+      if (runsOn) return deps.testElsewhere ? deps.testElsewhere(name, { ...parsed.server, runsOn }, lender ?? null, signal) : { status: 409, error: runsElsewhere(runsOn) };
       if (mcpProbesInFlight >= MAX_CONCURRENT_MCP_PROBES) {
         return { status: 429, error: "Two MCP connection tests are already running." };
       }
@@ -255,7 +260,7 @@ export function createMcpConfig(deps: McpConfigDeps & { changed(): void }): McpC
             sentSignIn = true;
           }
         }
-        const options = { ...(personal ? {} : appCatalog?.probeOptions(name, parsed.server) ?? {}), ...(asBot ? { asBot } : isRemoteMcpServer(target) ? {} : { asBot: deps.probeAs?.(target) ?? {} }) };
+        const options = { tryReadOnlyTool: true, ...(personal ? {} : appCatalog?.probeOptions(name, parsed.server) ?? {}), ...(asBot ? { asBot } : isRemoteMcpServer(target) ? {} : { asBot: deps.probeAs?.(target) ?? {} }) };
         const viaBots = isRemoteMcpServer(target) ? deps.botsPath?.() ?? null : null;
         const result = viaBots && isRemoteMcpServer(target)
           ? await probeAsBots(viaBots, name, target, signal, options)

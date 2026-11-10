@@ -2,8 +2,10 @@ import { userError, userErrorFields } from "../user-errors.ts";
 import { hostedWorkspaceConfiguration } from "../enterprise.ts";
 import { runsElsewhere, type McpConfig, type McpConfigDeps, type McpConfigResult } from "../host/mcp-config.ts";
 import { McpOAuthError, McpSignInError, mcpCallbackOrigin } from "../mcp-oauth.ts";
-import { isRemoteMcpServer, mcpServerBody, mcpServerServes, parseMcpServerMutation, parseMcpServersImport, parseStoredMcpServer } from "../mcp-registry.ts";
+import { isRemoteMcpServer, mcpServerBody, mcpServerNotFound, mcpServerServes, parseMcpServerMutation, parseMcpServersImport, parseStoredMcpServer, type StoredMcpServer } from "../mcp-registry.ts";
+import type { McpProbeResult } from "../mcp-probe.ts";
 import { personKey } from "../person-key.ts";
+import type { RequestAuth } from "../request-auth.ts";
 import { toolBudgetOf } from "../tool-budgets.ts";
 import { isLoopbackHost, isProxied, provesSameOrigin, requestOrigin } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
@@ -28,6 +30,16 @@ export interface McpServerRouteDeps extends Pick<McpConfigDeps, "cfg" | "session
   bot(id: string): { id: string; mcpServers?: readonly string[] | null } | null;
   /** Secrets as booleans, sign-in state attached. */
   mcpServerResponse(): { servers: readonly ListedMcpServer[] };
+  /** Whose lent computers this request may test a server on; null: nobody's. */
+  lender?(auth: RequestAuth): string | null;
+  /** A server the person adds that needs their own computer, marked as running on the one of theirs lent now. */
+  place?(server: StoredMcpServer, auth: RequestAuth): Promise<{ ok: true; server: StoredMcpServer } | { ok: false; error: string }>;
+  /** Who added a server and what Test found, for the team's connections (server/host/connection-health-host.ts). */
+  connectionHealth?: {
+    added(kind: "mcp", name: string, email: string | null): void;
+    removed(kind: "mcp", name: string): void;
+    tested(name: string, result: McpProbeResult): Promise<void>;
+  };
 }
 
 export function createMcpServerRoutes(deps: McpServerRouteDeps): RouteHandler {
@@ -85,7 +97,9 @@ export function createMcpServerRoutes(deps: McpServerRouteDeps): RouteHandler {
             const member = auth.kind === "session" ? sessionMember(auth.session) : null;
             return member ? deps.teamConnections.people.connection(personKey({ id: "", email: member.member.email }), name, url) : null;
           },
+          lender: deps.lender?.(auth) ?? null,
         });
+        if ("body" in result && result.status === 200) void deps.connectionHealth?.tested(name, result.body as McpProbeResult).catch(() => {});
         return answer(res, json, result);
       } finally {
         res.off("close", disconnect);
@@ -97,7 +111,7 @@ export function createMcpServerRoutes(deps: McpServerRouteDeps): RouteHandler {
       const [, name, action, flowId] = mcpSignIn;
       const raw = cfg.mcpServers?.[name!];
       const parsed = raw === undefined ? null : parseStoredMcpServer(name!, raw);
-      if (!parsed?.ok) return json(res, 404, { error: "MCP server not found." });
+      if (!parsed?.ok) return json(res, 404, { error: mcpServerNotFound(name!) });
       if (!isRemoteMcpServer(parsed.server)) return json(res, 400, { error: "Only servers reached by URL can be signed in to." });
       if (parsed.server.runsOn) return json(res, 409, { error: runsElsewhere(parsed.server.runsOn) });
       const url = parsed.server.url;
@@ -155,7 +169,11 @@ export function createMcpServerRoutes(deps: McpServerRouteDeps): RouteHandler {
       const name = typeof body?.name === "string" ? body.name : "";
       const parsed = parseMcpServerMutation(name, mcpServerBody(body));
       if (!parsed.ok) return json(res, 400, { error: parsed.error });
-      return answer(res, json, config.add(name, parsed.server));
+      const placed = deps.place ? await deps.place(parsed.server, auth) : { ok: true as const, server: parsed.server };
+      if (!placed.ok) return json(res, 409, { error: placed.error });
+      const added = config.add(name, placed.server);
+      if (added.status < 300) deps.connectionHealth?.added("mcp", name, auth.kind === "session" ? auth.session.email ?? null : null);
+      return answer(res, json, added);
     }
 
     // The {"mcpServers": {...}} block other agent tools write; imported servers stay disabled until enabled.
@@ -171,7 +189,14 @@ export function createMcpServerRoutes(deps: McpServerRouteDeps): RouteHandler {
         }
         if (!text.trim()) return { status: 400, error: "Paste the JSON block first." };
         const parsed = parseMcpServersImport(text);
-        return parsed.ok ? { servers: parsed.servers } : { status: 400, error: parsed.error };
+        if (!parsed.ok) return { status: 400, error: parsed.error };
+        const servers: Record<string, StoredMcpServer> = {};
+        for (const [name, server] of Object.entries(parsed.servers)) {
+          const placed = deps.place ? await deps.place(server, auth) : { ok: true as const, server };
+          if (!placed.ok) return { status: 409, error: placed.error };
+          servers[name] = placed.server;
+        }
+        return { servers };
       }));
     }
 
@@ -181,10 +206,14 @@ export function createMcpServerRoutes(deps: McpServerRouteDeps): RouteHandler {
         return json(res, 415, { error: "content-type must be application/json" });
       }
       const name = mcpServerRoute[1]!;
-      if (method === "DELETE") return answer(res, json, config.remove(name));
+      if (method === "DELETE") {
+        const removed = config.remove(name);
+        if (removed.status < 300) deps.connectionHealth?.removed("mcp", name);
+        return answer(res, json, removed);
+      }
       const body = await readBody(req);
       const current = cfg.mcpServers ?? {};
-      if (!Object.hasOwn(current, name)) return json(res, 404, { error: "MCP server not found." });
+      if (!Object.hasOwn(current, name)) return json(res, 404, { error: mcpServerNotFound(name) });
       const existing = parseStoredMcpServer(name, current[name]);
       if (!existing.ok) return json(res, 400, { error: existing.error });
       if (method === "PATCH") {

@@ -20,8 +20,13 @@ keeps people apart on it. The bot box ([bot-box.md](bot-box.md)) is what makes t
   in the @ list too, and whatever is addressed to one of them reaches their inbox (below, "One inbox per person"). "New conversation"
   is yours alone: no other Member and no Admin, the Super admin included, sees it, writes in it or learns of it, in
   lists, counts, unread marks, searches, files, notifications, streams, a bot's tools or another bot. A group chat is
-  seen by whoever sees it, and its unread mark is each person's own: a bot's reply there is unread for everyone until
-  they read it, and one person reading it clears it for nobody else (`room-reads.json`). A bot's shared chats say who can read them, *"Shared · everyone in Acme can see"* or, on a bot set to Only people added (`onlyPeopleAdded` on everyone's copy of it), *"Shared · only people added and admins can see"*. Every private chat says so in its header, *"Private · only you"*, and the first one on a
+  seen by whoever sees it. Its unread mark, and that of a bot's shared chats, is each person's own: a bot's reply there is
+  unread for everyone until they read it, and one person reading it or marking it unread changes it for nobody else
+  (`room-reads.json`, a bot's chat as `thread:<id>`); each person's lists and stream carry only their own mark and read
+  line, and a read reaches only their own streams. A private chat keeps its one mark. A notification everyone who sees
+  a conversation gets (a "done", a mention) is one entry with each person's own read mark (`read_by` on the feed's
+  row, never sent): reading it, Read all and opening its conversation mark it read for that person alone and tell only
+  their own apps (`notifications.read`). A mark made before marks were each person's stays read for everyone. A person's read marks go when they leave the team. A bot's shared chats say who can read them, *"Shared · everyone in Acme can see"* or, on a bot set to Only people added (`onlyPeopleAdded` on everyone's copy of it), *"Shared · only people added and admins can see"*. Every private chat says so in its header, *"Private · only you"*, and the first one on a
   device also says it as a sentence: *"Your chats in Acme are private. Only you can see them: not other members, not
   Acme's admins."* The server marks such a conversation `private: true` on the wire (`WireTask.private`). When you leave
   the team (or are removed), your private chats and everything only yours there are deleted, never handed to an admin
@@ -29,6 +34,11 @@ keeps people apart on it. The bot box ([bot-box.md](bot-box.md)) is what makes t
   (`server/workspace-backup-team-private.ts`): no private conversation, none of its work folders or files only it used, no
   member's memory layer, no member's own MausBot, their inbox or anything under `people/`. Restoring such an export gives a
   team back everything but those.
+- **The order of bots.** Each User's list of bots is in their own order (`bot-orders.json`): their reorder (`PUT
+  /api/bots/order`, any level, Can view included) changes only their list and reaches only their streams. Whoever has
+  never ordered theirs sees the team's order, which an Owner's or Admin's reorder sets: an admin's order is the team's,
+  for every admin and every User without their own. A bot added later takes its place in the team's order in every
+  list. A person's own order goes when they leave the team.
 - **Who is speaking.** A bot knows who wrote each line it reads. Your own typed line in your own chat with it is the
   only line that carries no note; every other line opens with one, written by the Cloud and never by the sender:
   `[From <who> · <what> · <authority>]`, as in `[From Ben (person) · message · their own request]` on each person's
@@ -65,10 +75,10 @@ keeps people apart on it. The bot box ([bot-box.md](bot-box.md)) is what makes t
   (below), never off the team.
 - **Rules.** A team's Owner and Admins choose the AI engines and computers its bots may use, whether bots may add MCP servers
   of their own, and whether it opens on a phone or with a link (below, "Rules"). What they restrict shows as *Managed by Acme*.
-- **Connected apps.** The team's connections (Composio, HighLevel, MCP sign-ins, an AI key an Admin saved) belong to the
+- **Connected apps.** The team's connections (Composio, MCP sign-ins, an AI key an Admin saved) belong to the
   Team Cloud and serve every member's turn through the broker. An Admin can instead make an app or an MCP server *each
   person's own* (below): then every member connects their own, and only their own chats use it. A person's
-  connections from elsewhere have no way in: a share code, a moved MCP sign-in or a HighLevel connection is refused with
+  connections from elsewhere have no way in: a share code, a moved MCP sign-in or a mailbox is refused with
   *"Personal connections never enter Acme. Ask an admin to connect it for Acme."* A login from a sign-in card is saved by
   an Admin only, for the whole team.
 - **Browsers.** Each private chat with a bot drives that person's own browser of the bot, each group chat the group
@@ -83,8 +93,15 @@ keeps people apart on it. The bot box ([bot-box.md](bot-box.md)) is what makes t
   *Paired devices* lists the phones those codes opened as *device · member* (`GET /api/team/phones`): a member sees their
   own, the Super admin and Admins every member's. **Remove** (`DELETE /api/team/phones/<id>`, the same rule) signs that
   phone out at once and closes its open streams; the app windows the Admin signs in are not listed there.
-- **Never asleep, kept across restarts.** A Team Cloud refuses the Admin's sleep request (`busy: ["team"]`) and keeps
-  every member's session across a restart; a My Cloud revokes every session that is not its owner's at each boot.
+- **Asleep only when nobody needs it, kept across restarts.** On a plan that sleeps, a Team Cloud answers the Admin's
+  sleep request as any home does ([Sleeping homes](cloud-pro.md#sleeping-homes-the-power-read-and-the-sleep-handshake)):
+  not while any member used it in the last minutes, a turn or routine runs, or work one bot handed another is still
+  moving (`handoff`). A member's app, phone or a webhook wakes it, and the Admin wakes it before a routine is due. Inbox
+  lines and open cards live on its volume, so a person's answer after a sleep finds them. The chat any member has open
+  while they use the app (`POST /api/presence/active` with its `threadId`) counts as in front of them, a User's as an
+  Admin's: its engine and prompt cache stay warm a while. That is all it does; it never holds back anyone's
+  notification. It keeps every member's
+  session across a restart; a My Cloud revokes every session that is not its owner's at each boot.
 
 
 ### Off a team
@@ -104,7 +121,7 @@ The team's rules live on the Admin (openmaus-cloud `docs/team-cloud.md` "Rules")
 only restricts. `server/cloud-team-policy.ts` fetches it at boot, every 5 minutes and when the Admin's signed `POST
 /api/cloud/team/policy-changed` nudges it, signed with the bootstrap secret (`POST /api/cloud/machines/team-policy`), and each
 request reports the fingerprint in force here. A change applies without a restart. A turn already running keeps its engine
-process and the servers it mounted when it began, HighLevel included, and finishes with them. What it reaches for through this
+process and the servers it mounted when it began, and finishes with them. What it reaches for through this
 machine is refused from that moment, mid-turn too: a connected-apps tool (the turn carries on without it) and the first claim on
 a computer (the turn stops there, in the rule's words; a computer it already holds stays with it until it ends). Every turn that
 starts after the change, a hand-off's included, gets the new rules, even in a chat whose engine process is still warm: that
@@ -118,7 +135,7 @@ process restarts without what is now blocked.
   all come through `mcpServersHost.mounted`, which drops what isn't allowed, whoever connected it; adding or signing in to one is
   refused. `allowedMcpServers: "team"` is the plain form: admins add servers as ever, a bot can't add one, a bot's own doesn't
   start and an engine's own user settings aren't read. Every connected-apps tool crosses `POST /api/internal/connectors/mcp`, which refuses a tool of an app that isn't
-  allowed, and code that could reach any app; connecting one is refused, and HighLevel isn't mounted.
+  allowed, and code that could reach any app; connecting one is refused.
 - **Remote access** on a Team Cloud is what a member's own code opens: "Open on your phone" is refused, codes already made stop
   working and phones already open sign out. The Admin-signed pairing stays: it is how every member's app and the Admin reach
   this machine, so a rule never locks the team out.
@@ -167,6 +184,31 @@ this server shares with every bot. It exists only on a Team Cloud.
   engines: [{ id, name, authenticated, account: { email, organization, method } | null }] } }` (`cloud-team-admin.ts`).
   Names, states and the identities the providers report: never a key, a token, a header or environment value (`secrets`
   are their names), nor any part of an MCP address but its host.
+- **How each connection is doing** (`server/host/connection-health-host.ts`, kept in `connection-health.json`). Each
+  `mcp` entry and each `apps.services` entry may also carry, every field absent when unknown (times ISO 8601):
+  `health` (`working` | `needs-sign-in` | `refused` | `unreachable`), `checkedAt` (when that was established),
+  `lastError` (a fixed class while it isn't working: `sign-in`, `expired`, `refresh-rejected`, `account-inactive`,
+  `refused`, `account-failed`, `cant-connect`, `timeout`, `not-found`, `bad-answer`; never what a server said),
+  `lastUsedAt` (the last real tool call on it), `addedBy` (`{ email, name }`, `name` null when they set none) with
+  `addedAt` (recorded from when this was built, so older connections have none), and `bots` (the names of the team bots
+  that use it; each member's own MausBot is left out). An `mcp` entry adds `expiresAt` for a sign-in that expires and
+  that nothing can refresh, and each app account adds `health`, its status word as one of the four (`ACTIVE` working,
+  `FAILED` refused, `EXPIRED`, `INACTIVE` and an unfinished connection needs-sign-in).
+  - **Real use decides it.** A tool call that works marks it working. One a server refuses with HTTP 401 on a sign-in
+    gets the sign-in refreshed at once: refused for good, or nothing can refresh it, and the sign-in ends (the app shows
+    it signed out, here and on a personal install or My Cloud, which take the same path); a key refused, or a 403, is
+    `refused`. A refresh refused as a turn starts is `needs-sign-in`. Not reaching a server (refused connection, timeout,
+    not found) is `unreachable` only once it happens twice in a row. An app call is read from its own error words only.
+    An app whose accounts all say they are not active shows that, whatever the last call did.
+  - **The background check.** A team server nothing used or checked for a day is tested once, as Test does it, at most
+    one about every hour (jittered, the first a quarter hour after start). It never runs while the machine has agreed
+    to sleep, starts no request to it, and a check the machine slept through is dropped. Apps aren't checked in the
+    background: the read itself asks the connected-apps service for each account's status.
+  - **Each person's own.** A connection each person connects has no `health` or `lastUsedAt` of its own; instead
+    `people.states` is `{ apps: { <slug>: { <address>: state } }, mcp: { <name>: { <address>: state } } }`, with
+    `state` `connected` | `needs-sign-in` | `not-connected`, for every member the Admin paired here and only for those
+    connections: whether they connected what an admin asked everyone to connect, never when or how they used it, nor
+    any other connection of theirs. A member who left is not listed.
 - Changes are never signed calls of their own. The Admin pairs as the admin making the change (the usual signed pairing
   with their `member` claim: an `owner` or `admin` gets the admin scope) and uses that session with the routes the app
   uses: `PATCH /api/config` for a key, `/api/mcp/servers` to add, test, sign in to and remove a server,
