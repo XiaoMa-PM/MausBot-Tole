@@ -1,5 +1,19 @@
 # Progress
 
+## 2026-11-10 · 同步上游 0.1.151
+
+**进展**
+- `main` 合并 `upstream/main`（0.1.142 → 0.1.151，merge-base 11-06），再合进 `feat/task-board`。
+- 冲突 8 个文件：`server/index.ts`（内部路由链）、两处 BUDGET_BASELINE、三个 catalog goldens、`SidebarProfileMenu.test.ts`（上游把工具菜单重新分组）、`openai-chat-protocol.ts`（本地的空串修复上游已有，取上游）。
+- 打包命令：`pnpm package:prepare && pnpm build:speech && pnpm build:cua && npx electron-builder --mac --publish never -c.directories.output=release-tole`，日志 `/tmp/tole-build.log`。
+
+**踩坑**
+- 解冲突不能对 `server/index.ts` 用 `git checkout --theirs`：会丢掉已自动合并的看板 import 和挂载行（`new Board()` / `createBoardRoutes`）。要用 `git checkout -m` 恢复标记后只改冲突块。
+- BUDGET_BASELINE 不要手填：先 `UPDATE_AGENTS_CATALOG_GOLDENS=1` 重生成 goldens，再跑一遍测试，按失败信息里的实际值回写。
+
+**总结**
+- 上游 4 天 6400+ 提交，看板相关的接触面只有「内部路由链」「工具菜单分组」「catalog 体积」三处，每次同步照这三处查即可。
+
 ## 2026-11-06 · 改名 MausBot Tole
 
 **进展**
